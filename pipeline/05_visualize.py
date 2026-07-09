@@ -2,9 +2,10 @@
 
 Layout: one point per clue, positioned by semantic similarity (UMAP of the
 embed-v4.0 embeddings of "Category / Clue / Answer"). A colormap dropdown spans
-the clue's own fields (air date, round, difficulty, daily double, value, length);
-hover shows the full clue; clicking a point runs a web search of the answer;
-Toponymy region names (stage 04) float over the clusters if present.
+the clue's own fields (air date, round, difficulty, daily double, value, length,
+subject, game/tournament, answer & category frequency, board row); hover shows the
+full clue plus subject/tournament/delivery context; clicking a point runs a web
+search of the answer; Toponymy region names (stage 04) float over the clusters.
 
 Inputs:  data/umap_coords.npz, data/clue_rows.parquet,
          [optional] data/toponymy_labels.parquet
@@ -17,6 +18,8 @@ from html import escape
 from urllib.parse import quote
 
 import datamapplot
+import glasbey
+import matplotlib as mpl
 import numpy as np
 import pandas as pd
 from config import (
@@ -28,6 +31,7 @@ from config import (
     TOPONYMY_LABELS_PARQUET,
     UMAP_COORDS_NPZ,
 )
+from matplotlib.colors import LinearSegmentedColormap, to_hex
 
 ROUND_LABELS = {
     "jeopardy": "Jeopardy",
@@ -40,6 +44,81 @@ ROUND_COLORS = {
     "Final Jeopardy": "#7a1f1f",
     "Other": "#9aa0a6",
 }
+
+
+def categorical_color_mapping(values, default=None, default_color="#c9ccd1"):
+    """Build a {value: hex} mapping for a categorical field using a glasbey palette.
+    The dominant `default` value (e.g. 'Untagged'/'Regular') is pinned to a muted grey
+    so the meaningful categories stand out instead of one color swamping the map."""
+    uniques = sorted(set(map(str, values)))
+    others = [v for v in uniques if v != default]
+    palette = glasbey.create_palette(palette_size=max(len(others), 1))
+    mapping = {v: to_hex(palette[i]) for i, v in enumerate(others)}
+    if default is not None and default in uniques:
+        mapping[default] = default_color
+    return mapping
+
+
+def _fill_nonfinite(a):
+    """Replace NaN/inf with the median so DataMapPlot's continuous scale stays valid."""
+    a = np.asarray(a, dtype=float)
+    return np.where(np.isfinite(a), a, np.nanmedian(a))
+
+
+def _clip_p99(a):
+    """Winsorize the top tail. The length/value/frequency fields are right-skewed:
+    without this, a few extreme outliers stretch the color scale and crush the bulk
+    of the points into its bottom fifth (p10-p90 of answer length spans 5% - 20% of
+    the raw range). The legend max becomes the p99 value, with the tail pinned there."""
+    return np.minimum(a, np.nanpercentile(a, 99))
+
+
+def truncated_cmap(name, lo, hi=1.0):
+    """Register and return a copy of a matplotlib colormap with its low end cut off.
+    Sequential maps like GnBu start near-white, and tiny points in near-white are
+    invisible on the white map background; datamapplot resolves cmap names through
+    the matplotlib registry, so a registered truncation is usable by name."""
+    base = mpl.colormaps[name]
+    trunc = LinearSegmentedColormap.from_list(f"{name}_trunc", base(np.linspace(lo, hi, 256)))
+    mpl.colormaps.register(trunc, force=True)
+    return trunc.name
+
+
+def _details_html(subject, game_type, clue_order, repeat_count):
+    bits = []
+    if subject and subject != "Untagged":
+        bits.append(escape(subject.replace("_", " ").title()))
+    if game_type and game_type != "Regular":
+        bits.append(escape(game_type))
+    if pd.notna(clue_order):
+        bits.append(f"clue&nbsp;{int(clue_order)}")
+    if repeat_count and int(repeat_count) > 0:
+        bits.append(f"seen&nbsp;{int(repeat_count) + 1}×")
+    if not bits:
+        return ""
+    return '<div style="margin-top:5px;font-size:11px;opacity:.7">' + " &nbsp;·&nbsp; ".join(bits) + "</div>"
+
+
+def _delivery_html(delivery, presenter, visual):
+    if delivery == "Standard":
+        return ""
+    who = escape(presenter) if presenter else ""
+    if delivery == "Clue Crew":
+        label = "Clue Crew" + (f" — {who}" if who else "")
+        if visual:
+            label += " · on-screen / location"
+    elif delivery == "Celebrity":
+        label = f"Presented by {who}" if who else "Celebrity-presented"
+    else:
+        label = "Special delivery"
+    return f'<div style="margin-top:5px;font-size:11px;color:#9a6a00">{label}</div>'
+
+
+def _aside_html(aside):
+    if not aside:
+        return ""
+    a = escape(aside if len(aside) <= 180 else aside[:177] + "…")
+    return f'<div style="margin-top:5px;font-size:11px;font-style:italic;opacity:.6">“{a}”</div>'
 
 
 def main():
@@ -81,6 +160,14 @@ def main():
     diff_str = diff.map(lambda d: f"{int(d)}/5" if pd.notna(d) else "—")
     search_url = ["https://www.google.com/search?q=" + quote(f"{a} jeopardy") for a in ans]
 
+    # New hover lines (pre-formatted in pandas so empty fields render nothing).
+    details_html = [
+        _details_html(s, g, o, r)
+        for s, g, o, r in zip(df["subject"], df["game_type"], df["clue_order"], df["repeat_count"])
+    ]
+    delivery_html = [_delivery_html(d, p, v) for d, p, v in zip(df["delivery"], df["presenter"], df["visual_clue"])]
+    aside_html = [_aside_html(a) for a in df["host_aside"].fillna("")]
+
     extra = pd.DataFrame(
         {
             "category": [escape(c) for c in cat],
@@ -90,6 +177,9 @@ def main():
             "round": round_disp.to_numpy(),
             "value": value_str.to_numpy(),
             "difficulty": diff_str.to_numpy(),
+            "details": details_html,
+            "deliv": delivery_html,
+            "aside": aside_html,
             "search_url": search_url,
         }
     )
@@ -102,6 +192,7 @@ def main():
         '<div style="margin-top:5px;font-weight:700;color:#1f4e79">{answer}</div>'
         '<div style="margin-top:5px;opacity:.8;font-size:12px">'
         "{round} &nbsp;·&nbsp; {value} &nbsp;·&nbsp; {air} &nbsp;·&nbsp; difficulty {difficulty}</div>"
+        "{details}{deliv}{aside}"
         "</div>"
     )
 
@@ -117,13 +208,37 @@ def main():
 
     value_num = value.to_numpy(dtype=float)
     value_num = np.where(np.isfinite(value_num) & (value_num > 0), value_num, np.nan)
-    value_num = np.where(np.isfinite(value_num), value_num, np.nanmedian(value_num))
+    value_num = _clip_p99(np.where(np.isfinite(value_num), value_num, np.nanmedian(value_num)))
 
-    clue_wc = df["clue_word_count"].to_numpy(dtype=float)
+    clue_wc = _clip_p99(df["clue_len_words"].to_numpy(dtype=float))
     round_cat = round_disp.to_numpy()
     dd_cat = np.where(df["daily_double"].fillna(False).to_numpy(), "Daily Double", "Regular")
 
-    rawdata = [air_num, round_cat, diff_num, dd_cat, value_num, clue_wc]
+    # New colormaps. subject/game_type are categorical (glasbey palette, default greyed);
+    # the two frequency fields are heavy-tailed so they go on a log scale.
+    subject_cat = df["subject"].fillna("Untagged").to_numpy()
+    game_cat = df["game_type"].fillna("Regular").to_numpy()
+    subject_cmap = categorical_color_mapping(subject_cat, default="Untagged")
+    game_cmap = categorical_color_mapping(game_cat, default="Regular")
+    answer_freq_log = _clip_p99(np.log10(df["answer_freq"].to_numpy(dtype=float).clip(min=1.0)))
+    cat_recur_log = _clip_p99(np.log10(df["category_recurrence"].to_numpy(dtype=float).clip(min=1.0)))
+    board_row_num = _fill_nonfinite(df["board_row"].to_numpy(dtype=float))
+    ans_len_num = _clip_p99(_fill_nonfinite(df["answer_len_chars"].to_numpy(dtype=float)))
+
+    rawdata = [
+        air_num,
+        round_cat,
+        diff_num,
+        dd_cat,
+        value_num,
+        clue_wc,
+        ans_len_num,
+        subject_cat,
+        game_cat,
+        answer_freq_log,
+        cat_recur_log,
+        board_row_num,
+    ]
     metadata = [
         {"field": "air_date", "description": "Air date (year)", "kind": "continuous", "cmap": "viridis"},
         {"field": "round", "description": "Round", "kind": "categorical", "color_mapping": ROUND_COLORS},
@@ -135,7 +250,33 @@ def main():
             "color_mapping": {"Daily Double": "#e4572e", "Regular": "#3a4a5c"},
         },
         {"field": "value", "description": "Clue value ($)", "kind": "continuous", "cmap": "cividis"},
-        {"field": "clue_word_count", "description": "Clue length (words)", "kind": "continuous", "cmap": "magma"},
+        {"field": "clue_len_words", "description": "Clue length (words)", "kind": "continuous", "cmap": "magma"},
+        {
+            "field": "answer_len_chars",
+            "description": "Answer length (chars)",
+            "kind": "continuous",
+            "cmap": truncated_cmap("GnBu", 0.35),
+        },
+        {
+            "field": "subject",
+            "description": "Subject (topic tag)",
+            "kind": "categorical",
+            "color_mapping": subject_cmap,
+        },
+        {"field": "game_type", "description": "Game / tournament", "kind": "categorical", "color_mapping": game_cmap},
+        {
+            "field": "answer_freq",
+            "description": "Answer frequency (log, archive)",
+            "kind": "continuous",
+            "cmap": "inferno",
+        },
+        {
+            "field": "category_recurrence",
+            "description": "Category recurrence (log, archive)",
+            "kind": "continuous",
+            "cmap": "YlGnBu",
+        },
+        {"field": "board_row", "description": "Board row (1-5)", "kind": "continuous", "cmap": "YlOrRd"},
     ]
 
     print("Rendering DataMapPlot...")

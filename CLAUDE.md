@@ -46,7 +46,7 @@ Six sequential stages, each writing to `data/` (gitignored):
 
 ```
 00 fetch_jeopardy   robworks-software/jeopardy-clues (HF), union splits   -> jeopardy_raw.parquet (~568k, 1983-2025)
-01 prepare_clues    window (JEOPARDY_START_DATE), clean, difficulty, embed_text -> clue_rows.parquet (~135k default; MAX_CLUES subsets too)
+01 prepare_clues    window, clean, difficulty + colormap/hover fields, embed_text -> clue_rows.parquet (~135k default; MAX_CLUES subsets too)
 02 embed_clues      Cohere embed-v4.0, input_type=clustering, float 1024  -> clue_embeddings.npz (emb + clue_id)
 03 reduce_umap      UMAP cosine, n_neighbors=15, min_dist=0.05            -> umap_coords.npz (coords + clue_id)
 04 label_topics     Toponymy regions (Cohere terms + Claude naming)       -> toponymy_labels.parquet (label_layer_*)
@@ -93,6 +93,26 @@ embeddings npz, the coords npz, and the labels parquet are all one-row-per-clue.
   out. Prefer it over raw `value` for a "hardness" colormap: `value` spans the 2001
   dollar-doubling and is NaN for Final Jeopardy, so across all 41 seasons it has an
   era discontinuity. `value` is still offered as a colormap, just de-emphasized.
+
+- **Colormap/hover metadata is derived in stage 01 and is layout-free.** Beyond
+  `difficulty`, stage 01 derives per-clue fields used only for the stage-05 colormap
+  dropdown and hover, never embedded: `subject` (first non-difficulty topic tag, else
+  `Untagged`; ~36% tagged in the window), `game_type` (tournament/special bucket
+  parsed from `notes`, else `Regular`), `host_aside` (the `(...)`/`[...]` spans in
+  `notes`), `delivery`/`presenter`/`visual_clue` (parsed from a clue's leading
+  `(X presents…)` parenthetical — Clue Crew vs celebrity guest), `board_row` (value as
+  a fraction of the round's top value per season → era-stable 1–5, robust to off-grid
+  $100/300/500 clues), `clue_len_words`/`answer_len_chars` (length with parenthetical
+  asides stripped, so delivery boilerplate doesn't inflate it), `repeat_count`, and the archive-wide counts
+  `answer_freq` ("stock answers") and `category_recurrence` (computed on the full raw
+  **before** the date window so they stay truthful under windowing/`MAX_CLUES`). Because
+  none of these touch `embed_text`, adding or changing one is cheap: **re-run 01 then 05
+  only** (seconds, no API) — the `clue_id` set is unchanged, so the existing embeddings/
+  UMAP/Toponymy artifacts stay aligned. Stage 05 colors categoricals with a glasbey
+  palette and pins the dominant default (`Untagged`/`Regular`) to grey; right-skewed
+  continuous fields (lengths, value, log counts) are winsorized at p99 so outliers
+  don't crush the bulk into the pale end of the scale, and near-white cmap low ends
+  are truncated (invisible for tiny points on the white background).
 
 - **Category wordplay shapes the layout.** Jeopardy categories are often puns
   ("RHYME TIME", "POTENT POTABLES"). Because `category` is in the embed text, a
