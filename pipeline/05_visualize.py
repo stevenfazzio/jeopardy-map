@@ -1,11 +1,13 @@
 """Render the interactive DataMapPlot of Jeopardy clues.
 
 Layout: one point per clue, positioned by semantic similarity (UMAP of the
-embed-v4.0 embeddings of "Category / Clue / Answer"). A colormap dropdown spans
-the clue's own fields (air date, round, difficulty, daily double, value, length,
-subject, game/tournament, answer & category frequency, board row); hover shows the
-full clue plus subject/tournament/delivery context; clicking a point runs a web
-search of the answer; Toponymy region names (stage 04) float over the clusters.
+embed-v4.0 embeddings of "Category / Clue / Answer"), in dark mode (near-black
+background). A colormap dropdown spans the clue's own fields (air date, round,
+difficulty, daily double, value, length, subject, game/tournament, answer &
+category frequency, board row); hovering shows the clue as a Jeopardy-blue clue
+card (uppercase white clue text, gold answer) plus subject/tournament/delivery
+context; clicking a point runs a web search of the answer; Toponymy region names
+(stage 04) float over the clusters.
 
 Inputs:  data/umap_coords.npz, data/clue_rows.parquet,
          [optional] data/toponymy_labels.parquet
@@ -38,21 +40,41 @@ ROUND_LABELS = {
     "double_jeopardy": "Double Jeopardy",
     "final_jeopardy": "Final Jeopardy",
 }
+# Categorical colors are tuned for the dark background: bright enough to read on
+# near-black, with "default"/majority values in receding greys.
 ROUND_COLORS = {
-    "Jeopardy": "#1f4e79",
-    "Double Jeopardy": "#b45309",
-    "Final Jeopardy": "#7a1f1f",
+    "Jeopardy": "#5b9bd5",
+    "Double Jeopardy": "#e08214",
+    "Final Jeopardy": "#d1495b",
     "Other": "#9aa0a6",
 }
 
+JEOPARDY_BLUE = "#060ce9"
+GOLD = "#ffd166"
 
-def categorical_color_mapping(values, default=None, default_color="#c9ccd1"):
+# The hover tooltip styled as a Jeopardy clue card.
+CLUE_CARD_CSS = f"""
+            font-size: 0.8em;
+            font-family: IBM Plex Sans;
+            font-weight: 300;
+            color: #ffffff !important;
+            background-color: {JEOPARDY_BLUE}f0 !important;
+            border: 2px solid #04066e;
+            border-radius: 6px;
+            backdrop-filter: blur(6px);
+            box-shadow: 3px 4px 14px #000000aa;
+            max-width: 25%;
+"""
+
+
+def categorical_color_mapping(values, default=None, default_color="#585d66"):
     """Build a {value: hex} mapping for a categorical field using a glasbey palette.
     The dominant `default` value (e.g. 'Untagged'/'Regular') is pinned to a muted grey
-    so the meaningful categories stand out instead of one color swamping the map."""
+    so the meaningful categories stand out instead of one color swamping the map.
+    The lightness floor keeps every palette color legible on the dark background."""
     uniques = sorted(set(map(str, values)))
     others = [v for v in uniques if v != default]
-    palette = glasbey.create_palette(palette_size=max(len(others), 1))
+    palette = glasbey.create_palette(palette_size=max(len(others), 1), lightness_bounds=(40, 90))
     mapping = {v: to_hex(palette[i]) for i, v in enumerate(others)}
     if default is not None and default in uniques:
         mapping[default] = default_color
@@ -75,9 +97,11 @@ def _clip_p99(a):
 
 def truncated_cmap(name, lo, hi=1.0):
     """Register and return a copy of a matplotlib colormap with its low end cut off.
-    Sequential maps like GnBu start near-white, and tiny points in near-white are
-    invisible on the white map background; datamapplot resolves cmap names through
-    the matplotlib registry, so a registered truncation is usable by name."""
+    Tiny points colored from a cmap's near-black end are invisible on the dark map
+    background (as near-white ends are on a white one), so every sequential scale
+    here is truncated (and reversed where needed) to run dim-but-visible -> bright;
+    datamapplot resolves cmap names through the matplotlib registry, so a
+    registered truncation is usable by name."""
     base = mpl.colormaps[name]
     trunc = LinearSegmentedColormap.from_list(f"{name}_trunc", base(np.linspace(lo, hi, 256)))
     mpl.colormaps.register(trunc, force=True)
@@ -111,7 +135,7 @@ def _delivery_html(delivery, presenter, visual):
         label = f"Presented by {who}" if who else "Celebrity-presented"
     else:
         label = "Special delivery"
-    return f'<div style="margin-top:5px;font-size:11px;color:#9a6a00">{label}</div>'
+    return f'<div style="margin-top:5px;font-size:11px;color:{GOLD}">{label}</div>'
 
 
 def _aside_html(aside):
@@ -184,12 +208,15 @@ def main():
         }
     )
 
+    # Styled as a Jeopardy clue card (with CLUE_CARD_CSS): uppercase white clue
+    # text on the blue card, answer in gold.
     hover_template = (
         '<div style="max-width:320px">'
         '<div style="font-weight:700;font-size:11px;letter-spacing:.04em;'
-        'text-transform:uppercase;opacity:.65">{category}</div>'
-        '<div style="margin-top:3px;font-size:14px;line-height:1.35">{clue}</div>'
-        '<div style="margin-top:5px;font-weight:700;color:#1f4e79">{answer}</div>'
+        'text-transform:uppercase;opacity:.85">{category}</div>'
+        '<div style="margin-top:6px;font-size:13px;line-height:1.45;text-transform:uppercase;'
+        'letter-spacing:.04em;font-weight:600;text-shadow:1px 1px 2px #00000088">{clue}</div>'
+        '<div style="margin-top:5px;font-weight:700;color:' + GOLD + '">{answer}</div>'
         '<div style="margin-top:5px;opacity:.8;font-size:12px">'
         "{round} &nbsp;·&nbsp; {value} &nbsp;·&nbsp; {air} &nbsp;·&nbsp; difficulty {difficulty}</div>"
         "{details}{deliv}{aside}"
@@ -240,22 +267,42 @@ def main():
         board_row_num,
     ]
     metadata = [
-        {"field": "air_date", "description": "Air date (year)", "kind": "continuous", "cmap": "viridis"},
+        {
+            "field": "air_date",
+            "description": "Air date (year)",
+            "kind": "continuous",
+            "cmap": truncated_cmap("viridis", 0.2),
+        },
         {"field": "round", "description": "Round", "kind": "categorical", "color_mapping": ROUND_COLORS},
-        {"field": "difficulty", "description": "Difficulty (1-5)", "kind": "continuous", "cmap": "plasma"},
+        {
+            "field": "difficulty",
+            "description": "Difficulty (1-5)",
+            "kind": "continuous",
+            "cmap": truncated_cmap("plasma", 0.15),
+        },
         {
             "field": "daily_double",
             "description": "Daily Double?",
             "kind": "categorical",
-            "color_mapping": {"Daily Double": "#e4572e", "Regular": "#3a4a5c"},
+            "color_mapping": {"Daily Double": "#e4572e", "Regular": "#5a6a7d"},
         },
-        {"field": "value", "description": "Clue value ($)", "kind": "continuous", "cmap": "cividis"},
-        {"field": "clue_len_words", "description": "Clue length (words)", "kind": "continuous", "cmap": "magma"},
+        {
+            "field": "value",
+            "description": "Clue value ($)",
+            "kind": "continuous",
+            "cmap": truncated_cmap("cividis", 0.2),
+        },
+        {
+            "field": "clue_len_words",
+            "description": "Clue length (words)",
+            "kind": "continuous",
+            "cmap": truncated_cmap("magma", 0.25),
+        },
         {
             "field": "answer_len_chars",
             "description": "Answer length (chars)",
             "kind": "continuous",
-            "cmap": truncated_cmap("GnBu", 0.35),
+            "cmap": truncated_cmap("GnBu_r", 0.15),
         },
         {
             "field": "subject",
@@ -268,15 +315,20 @@ def main():
             "field": "answer_freq",
             "description": "Answer frequency (log, archive)",
             "kind": "continuous",
-            "cmap": "inferno",
+            "cmap": truncated_cmap("inferno", 0.25),
         },
         {
             "field": "category_recurrence",
             "description": "Category recurrence (log, archive)",
             "kind": "continuous",
-            "cmap": "YlGnBu",
+            "cmap": truncated_cmap("YlGnBu_r", 0.15),
         },
-        {"field": "board_row", "description": "Board row (1-5)", "kind": "continuous", "cmap": "YlOrRd"},
+        {
+            "field": "board_row",
+            "description": "Board row (1-5)",
+            "kind": "continuous",
+            "cmap": truncated_cmap("YlOrRd_r", 0.15),
+        },
     ]
 
     print("Rendering DataMapPlot...")
@@ -294,8 +346,8 @@ def main():
         enable_search=True,
         font_family="IBM Plex Sans",
         tooltip_font_family="IBM Plex Sans",
-        darkmode=False,
-        background_color="#ffffff",
+        tooltip_css=CLUE_CARD_CSS,
+        darkmode=True,
     )
     fig.save(str(MAP_HTML))
 

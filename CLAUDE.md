@@ -108,11 +108,17 @@ embeddings npz, the coords npz, and the labels parquet are all one-row-per-clue.
   **before** the date window so they stay truthful under windowing/`MAX_CLUES`). Because
   none of these touch `embed_text`, adding or changing one is cheap: **re-run 01 then 05
   only** (seconds, no API) — the `clue_id` set is unchanged, so the existing embeddings/
-  UMAP/Toponymy artifacts stay aligned. Stage 05 colors categoricals with a glasbey
-  palette and pins the dominant default (`Untagged`/`Regular`) to grey; right-skewed
-  continuous fields (lengths, value, log counts) are winsorized at p99 so outliers
-  don't crush the bulk into the pale end of the scale, and near-white cmap low ends
-  are truncated (invisible for tiny points on the white background).
+  UMAP/Toponymy artifacts stay aligned.
+
+- **The map is dark mode; every color choice in stage 05 assumes a near-black
+  background.** The hover tooltip is styled as a Jeopardy clue card (`#060ce9`,
+  uppercase white clue text, gold answer). Sequential colormaps are truncated (and
+  reversed where needed) so they run dim-but-visible → bright — a cmap's near-black
+  end renders tiny points invisible on the dark ground, the mirror of near-white on
+  white. Right-skewed continuous fields (lengths, value, log counts) are winsorized
+  at p99 so outliers don't crush the bulk into the dim end. Categoricals use a
+  glasbey palette with a lightness floor (`lightness_bounds=(40, 90)`), and the
+  dominant defaults (`Untagged`/`Regular`) are pinned to receding greys.
 
 - **Category wordplay shapes the layout.** Jeopardy categories are often puns
   ("RHYME TIME", "POTENT POTABLES"). Because `category` is in the embed text, a
