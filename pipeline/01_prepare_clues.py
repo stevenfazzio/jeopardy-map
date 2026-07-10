@@ -2,7 +2,8 @@
 
 Keeps clues in the JEOPARDY_START_DATE window (default last decade); within it we
 keep ALL rows including repeat clues (1 row = 1 node, as designed). The robworks
-dump is already clean (no HTML); we just normalize whitespace and drop the tiny
+dump is already clean (no HTML); we normalize whitespace, strip the literal
+backslash-escapes (\" \' \/) it carries from its JSON lineage, and drop the tiny
 fraction with empty clue or answer.
 
 Derived per-clue fields for colormaps/hover (all cheap, none touch embed_text):
@@ -55,6 +56,9 @@ KEEP_COLS = [
     "notes",
 ]
 _WS = re.compile(r"\s+")
+# Literal backslash-escaped quotes/slashes in the dump ('ENDS IN "E\"'); the
+# backslash is an artifact, the following character is the real text.
+_ESCAPE = re.compile(r"\\([\"'/])")
 _DIFF = re.compile(r"^difficulty:(\d+)$")
 # A leading "(...)" parenthetical on a clue (who delivers it).
 _LEAD_PAREN = re.compile(r"^\s*\((.*?)\)")
@@ -96,7 +100,7 @@ GAME_TYPE_RULES = [
 
 
 def _norm(s: pd.Series) -> pd.Series:
-    return s.fillna("").str.replace(_WS, " ", regex=True).str.strip()
+    return s.fillna("").str.replace(_ESCAPE, r"\1", regex=True).str.replace(_WS, " ", regex=True).str.strip()
 
 
 def _strip_parens(s: str) -> str:

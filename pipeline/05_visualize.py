@@ -5,9 +5,9 @@ embed-v4.0 embeddings of "Category / Clue / Answer"), in dark mode (near-black
 background). A colormap dropdown spans the clue's own fields (air date, round,
 difficulty, daily double, value, length, subject, game/tournament, answer &
 category frequency, board row); hovering shows the clue as a Jeopardy-blue clue
-card (uppercase white clue text, gold answer) plus subject/tournament/delivery
-context; clicking a point runs a web search of the answer; Toponymy region names
-(stage 04) float over the clusters.
+card (caps category strip, sentence-case clue, gold answer) plus subject/
+tournament/delivery context; clicking a point runs a web search of the answer;
+Toponymy region names (stage 04) float over the clusters.
 
 Inputs:  data/umap_coords.npz, data/clue_rows.parquet,
          [optional] data/toponymy_labels.parquet
@@ -52,18 +52,33 @@ ROUND_COLORS = {
 JEOPARDY_BLUE = "#060ce9"
 GOLD = "#ffd166"
 
-# The hover tooltip styled as a Jeopardy clue card.
+# Show-style typefaces (the real ones are commercial, so closest Google Fonts):
+# Oswald SemiBold ~ Swiss 911 (category strip; condensed gothic, but with the
+# board's open letterspacing — Anton was too dense/cramped), Bellota Text Bold ~
+# ITC Korinna (clue text). Loaded at page load via GOOGLE_FONTS_HTML
+# (custom_html); datamapplot only embeds font_family/tooltip_font_family itself.
+CATEGORY_FONT = "'Oswald', 'Arial Narrow', sans-serif"
+CLUE_FONT = "'Bellota Text', 'Bookman Old Style', Georgia, serif"
+GOOGLE_FONTS_HTML = (
+    '<link rel="preconnect" href="https://fonts.googleapis.com">\n'
+    '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>\n'
+    '<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@600'
+    '&family=Bellota+Text:ital,wght@0,700;1,700&display=swap" rel="stylesheet">\n'
+)
+
+# The hover tooltip styled as a Jeopardy clue card. Fully opaque, no backdrop
+# blur: the blur forced compositing on every tooltip move over the WebGL canvas
+# (the rapid-hover hot path) while being invisible behind a 94%-alpha card.
 CLUE_CARD_CSS = f"""
             font-size: 0.8em;
             font-family: IBM Plex Sans;
             font-weight: 300;
             color: #ffffff !important;
-            background-color: {JEOPARDY_BLUE}f0 !important;
+            background-color: {JEOPARDY_BLUE} !important;
             border: 2px solid #04066e;
             border-radius: 6px;
-            backdrop-filter: blur(6px);
             box-shadow: 3px 4px 14px #000000aa;
-            max-width: 25%;
+            max-width: min(360px, 85vw);
 """
 
 
@@ -108,14 +123,12 @@ def truncated_cmap(name, lo, hi=1.0):
     return trunc.name
 
 
-def _details_html(subject, game_type, clue_order, repeat_count):
+def _details_html(subject, game_type, repeat_count):
     bits = []
     if subject and subject != "Untagged":
         bits.append(escape(subject.replace("_", " ").title()))
     if game_type and game_type != "Regular":
         bits.append(escape(game_type))
-    if pd.notna(clue_order):
-        bits.append(f"clue&nbsp;{int(clue_order)}")
     if repeat_count and int(repeat_count) > 0:
         bits.append(f"seen&nbsp;{int(repeat_count) + 1}×")
     if not bits:
@@ -176,19 +189,25 @@ def main():
     clue = df["clue_text"].fillna("")
     ans = df["answer"].fillna("")
     air = pd.to_datetime(df["air_date"], errors="coerce")
-    air_str = air.dt.strftime("%Y-%m-%d").fillna("?")
+    air_str = air.dt.strftime("%b %-d, %Y").fillna("?")
     round_disp = df["round"].map(ROUND_LABELS).fillna("Other")
     value = df["value"]
     value_str = value.map(lambda v: f"${int(v):,}" if pd.notna(v) and v > 0 else "—")
     diff = df["difficulty"]
-    diff_str = diff.map(lambda d: f"{int(d)}/5" if pd.notna(d) else "—")
     search_url = ["https://www.google.com/search?q=" + quote(f"{a} jeopardy") for a in ans]
 
+    # Board position, slotted between round and value so the meta line reads as
+    # board coordinates (round · slot · dollars). Suppressed for Final Jeopardy —
+    # every FJ clue is "clue 1" by definition. Pre-formatted so empties vanish.
+    order_str = pd.Series(
+        [
+            f" &nbsp;·&nbsp; clue {int(o)}" if pd.notna(o) and r != "final_jeopardy" else ""
+            for o, r in zip(df["clue_order"], df["round"])
+        ]
+    )
+
     # New hover lines (pre-formatted in pandas so empty fields render nothing).
-    details_html = [
-        _details_html(s, g, o, r)
-        for s, g, o, r in zip(df["subject"], df["game_type"], df["clue_order"], df["repeat_count"])
-    ]
+    details_html = [_details_html(s, g, r) for s, g, r in zip(df["subject"], df["game_type"], df["repeat_count"])]
     delivery_html = [_delivery_html(d, p, v) for d, p, v in zip(df["delivery"], df["presenter"], df["visual_clue"])]
     aside_html = [_aside_html(a) for a in df["host_aside"].fillna("")]
 
@@ -200,7 +219,7 @@ def main():
             "air": air_str.to_numpy(),
             "round": round_disp.to_numpy(),
             "value": value_str.to_numpy(),
-            "difficulty": diff_str.to_numpy(),
+            "order": order_str.to_numpy(),
             "details": details_html,
             "deliv": delivery_html,
             "aside": aside_html,
@@ -208,17 +227,32 @@ def main():
         }
     )
 
-    # Styled as a Jeopardy clue card (with CLUE_CARD_CSS): uppercase white clue
-    # text on the blue card, answer in gold.
+    # Styled as a Jeopardy clue card (with CLUE_CARD_CSS), tuned for rapid
+    # hover-scanning: fixed width so every card has identical geometry; caps
+    # category strip over a hairline rule, with the air date pinned top-right (the
+    # only position that's stable regardless of clue length, and the field you
+    # check per-hover when coloring by air date — flexbox keeps it on the first
+    # line while long categories wrap under themselves); clue in sentence case
+    # (all-caps kills word shape at speed — the raw text is mixed case, the show's
+    # caps was a CSS transform); the answer set off by gold + italic + size +
+    # gap — cues in the letterforms, so a wrapping clue's last line never reads
+    # as the answer at speed (a quote-bar was tried and cut: 99.8% of answers
+    # are one line, where it shrinks to a stray cursor-like glyph); the meta
+    # line is pure board coordinates (round · slot · dollars).
     hover_template = (
-        '<div style="max-width:320px">'
-        '<div style="font-weight:700;font-size:11px;letter-spacing:.04em;'
-        'text-transform:uppercase;opacity:.85">{category}</div>'
-        '<div style="margin-top:6px;font-size:13px;line-height:1.45;text-transform:uppercase;'
-        'letter-spacing:.04em;font-weight:600;text-shadow:1px 1px 2px #00000088">{clue}</div>'
-        '<div style="margin-top:5px;font-weight:700;color:' + GOLD + '">{answer}</div>'
-        '<div style="margin-top:5px;opacity:.8;font-size:12px">'
-        "{round} &nbsp;·&nbsp; {value} &nbsp;·&nbsp; {air} &nbsp;·&nbsp; difficulty {difficulty}</div>"
+        '<div style="width:min(330px, 80vw)">'
+        '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px;'
+        'border-bottom:1px solid rgba(255,255,255,.25);padding-bottom:6px">'
+        '<div style="font-family:' + CATEGORY_FONT + ";font-weight:600;font-size:15px;"
+        'letter-spacing:.06em;text-transform:uppercase;opacity:.92">{category}</div>'
+        '<div style="font-size:11px;opacity:.6;white-space:nowrap">{air}</div>'
+        "</div>"
+        '<div style="margin-top:7px;font-family:' + CLUE_FONT + ";font-weight:700;font-size:14px;"
+        'line-height:1.5">{clue}</div>'
+        '<div style="margin-top:12px;font-family:' + CLUE_FONT + ";font-weight:700;font-style:italic;"
+        "font-size:15px;color:" + GOLD + '">{answer}</div>'
+        '<div style="margin-top:8px;opacity:.75;font-size:12px">'
+        "{round}{order} &nbsp;·&nbsp; {value}</div>"
         "{details}{deliv}{aside}"
         "</div>"
     )
@@ -347,6 +381,7 @@ def main():
         font_family="IBM Plex Sans",
         tooltip_font_family="IBM Plex Sans",
         tooltip_css=CLUE_CARD_CSS,
+        custom_html=GOOGLE_FONTS_HTML,
         darkmode=True,
     )
     fig.save(str(MAP_HTML))

@@ -117,7 +117,13 @@ embeddings npz, the coords npz, and the labels parquet are all one-row-per-clue.
 
 - **The map is dark mode; every color choice in stage 05 assumes a near-black
   background.** The hover tooltip is styled as a Jeopardy clue card (`#060ce9`,
-  uppercase white clue text, gold answer). Sequential colormaps are truncated (and
+  caps category strip, gold answer) in show-style Google-Font stand-ins — Oswald ≈
+  Swiss 911 for the category, Bellota Text ≈ ITC Korinna for clue/answer (the real
+  faces are commercial), loaded via `custom_html` since datamapplot only embeds
+  `font_family`/`tooltip_font_family` itself — but tuned for rapid hover-scanning
+  over show fidelity: fixed card width (identical geometry every hover), clue in
+  sentence case not board-caps, opaque card with no backdrop blur (compositing
+  cost on the hover hot path). Sequential colormaps are truncated (and
   reversed where needed) so they run dim-but-visible → bright — a cmap's near-black
   end renders tiny points invisible on the dark ground, the mirror of near-white on
   white. Right-skewed continuous fields (lengths, value, log counts) are winsorized
@@ -197,6 +203,11 @@ uv run python analysis/20_metadata_sweep.py  # then any numbered script, in any 
   "PyTorch not found" notice on import is expected and fine).
 - **`tee | tail` masks the Python exit code** for long background runs — use
   `set -o pipefail` if you pipe a stage's output and care about success.
+- **The live embeddings predate the escape-stripping in `_norm`** (stage 01 now
+  removes the dump's literal `\"` `\'` artifacts). `clue_embeddings.npz` was
+  computed on the escaped text and deliberately not regenerated — semantically
+  negligible, and stage 02's signature is clue_id-based so nothing invalidates.
+  A future full re-run embeds the clean text.
 - `experiments/` (if added) is for one-off diagnostics, not part of the pipeline.
 
 ## Cost / scale
