@@ -16,6 +16,11 @@ Wikipedia articles and colors by over/under-representation). This project keeps
 only the fetch → embed → reduce → label → visualize spine; the fetch stage and
 the DataMapPlot stage are ported from there.
 
+A companion **`analysis/` suite** (own section below) characterizes the corpus in
+the raw 1024-d embedding space for the blog post — statistics, an HTML report,
+and a standalone region treemap — treating the 2D layout as a visualization
+artifact rather than the object of study.
+
 ## Commands
 
 ```bash
@@ -130,6 +135,55 @@ embeddings npz, the coords npz, and the labels parquet are all one-row-per-clue.
 - **Repeats are kept (1 row = 1 node).** `is_repeat_clue` rows are not collapsed;
   near-identical repeat clues land as overlapping points by design.
 
+## Analysis suite (`analysis/`)
+
+A second, self-contained package that analyzes the corpus in the **raw 1024-d
+embedding space**. Read-only over the pipeline's `data/` artifacts; all of its
+own outputs and caches live in `data/analysis/` (gitignored). Scripts are
+numbered and standalone like pipeline stages (no CLI args); they need stages
+00–02 to have run (`50`/`70` also read stage 04's labels).
+
+```bash
+uv run python analysis/common.py             # (re)build the cached exact kNN graph (~3 min)
+uv run python analysis/20_metadata_sweep.py  # then any numbered script, in any order after 10
+```
+
+- **`common.py` is the hub** (the `config.py` analogue): aligned loaders —
+  canonical row order everywhere = the embedding npz `clue_id` order — the cached
+  exact cosine k=25 kNN graph, the permutation-test machinery, and
+  `dmp_region_tree()`, the region hierarchy shared by `70` and `80`.
+- **Scripts:** `10` EVoC ambient clustering + Toponymy/Haiku region naming (the
+  only paid step, ~$8.40, cost-guarded; the clustering itself is free and takes
+  ~20s) · `20` metadata × geometry kNN sweep vs permutation nulls · `30` linear
+  probes (episode-grouped CV) · `40` season drift · `50` region composition +
+  AMI crosswalk vs the 2D map's regions · `60` batch-level robustness nulls ·
+  `70` → `report.html` (the working report) · `80` → `treemap.html` (standalone
+  full-page treemap with a DJ-share / FJ-lift / DD-lift color dropdown).
+- **toponymy 0.5.0's `EVoCClusterer` wrapper is incompatible with evoc 0.3.1**
+  (it passes since-dropped kwargs), so `10` drives `evoc.EVoC` directly and hands
+  `Toponymy` a duck-typed pre-fitted clusterer via its documented reuse branch.
+- **Jeopardy content arrives in batches** — a category is ~5 same-topic clues in
+  one episode — so clue-level nulls wildly flatter episode/category-level fields
+  (game_type, season, delivery). Trust `60`'s episode/category-swap nulls and the
+  probes' episode-grouped CV, never raw clue-level lifts for those fields.
+- **Tautology channels:** `embed_text` contains the delivery parenthetical and
+  the category name, so delivery/visual_clue/category_recurrence "signals" are
+  partly circular. `subject`/`difficulty` (dataset-author `topic_tags`) are
+  excluded from all analyses by decision.
+- **The region treemap follows DataMapPlot's topic-tree algorithm faithfully:**
+  parent = int-cast median provenance through coarser layers' point-level labels,
+  noise (−1) as a first-class parent (so "Minor subtopics" are real branches),
+  ramify-style honor-then-residual clue placement, and single-child chains
+  collapsed (EVoC keeps clusters stable across scales — 13/27 layer-4 clusters
+  are point-identical to a layer-3 cluster — and Toponymy's duplicate-name
+  disambiguation is within-layer only, so persistent clusters otherwise render
+  as "X > X"). Fidelity to that reference is deliberate; don't re-improvise it.
+- **Keep report regen fast (~0.5s warm).** Heavy derivations are cached with
+  signature checks (kNN graph, top-1 neighbor sims; AMI crosswalk — delete
+  `data/analysis/ami_crosswalk.parquet` to recompute), and `load_clue_ids()`
+  reads ids lazily instead of loading the 531MB embedding matrix. Memoize any
+  new heavy computation the moment a figure becomes something to iterate on.
+
 ## Conventions & gotchas
 
 - **Atomic writes / resumability.** Every stage writes via tmp + `os.replace`.
@@ -167,7 +221,8 @@ NOT, so run them in a stable/background session rather than a fragile shell.
 
 | Variable | Used by | Purpose |
 |---|---|---|
-| `CO_API_KEY` | stages 02, 04 | Cohere `embed-v4.0` (clue embeddings) + Toponymy keyphrase embeddings |
-| `ANTHROPIC_API_KEY` | stage 04 | Claude region naming (default `claude-haiku-4-5-20251001`; via `ANTHROPIC_MODEL_NAMING`) |
+| `CO_API_KEY` | stages 02, 04; analysis/10 | Cohere `embed-v4.0` (clue embeddings) + Toponymy keyphrase embeddings |
+| `ANTHROPIC_API_KEY` | stage 04; analysis/10 | Claude region naming (default `claude-haiku-4-5-20251001`; via `ANTHROPIC_MODEL_NAMING`) |
 
-Stages 00, 01, 03, 05 need no external auth (Hugging Face is public).
+Stages 00, 01, 03, 05 need no external auth (Hugging Face is public), and
+neither does any analysis script other than `10`.
