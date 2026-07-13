@@ -165,6 +165,19 @@ def main():
 
     print("multiclass probes:", flush=True)
     probe_multiclass(emb, df["round"].to_numpy(), groups, "round (3-class)", rows, rng)
+    # board_row as 5-class classification: the apples-to-apples comparison with
+    # Boettcher (2016), who predicted 5 difficulty levels from sparse topic
+    # features and got ~21.7% accuracy vs a 20% majority baseline (a null).
+    br = df["board_row"].to_numpy(float)
+    br_mask = main_rounds & np.isfinite(br)
+    probe_multiclass(
+        emb[br_mask],
+        br[br_mask].astype(int).astype(str),
+        groups[br_mask],
+        "board_row (5-class, main rounds)",
+        rows,
+        rng,
+    )
 
     print("continuous probes:", flush=True)
     air_year = (df["air_date"].dt.year + df["air_date"].dt.dayofyear / 365.25).to_numpy()

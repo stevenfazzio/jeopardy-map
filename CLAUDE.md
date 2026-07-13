@@ -147,7 +147,9 @@ A second, self-contained package that analyzes the corpus in the **raw 1024-d
 embedding space**. Read-only over the pipeline's `data/` artifacts; all of its
 own outputs and caches live in `data/analysis/` (gitignored). Scripts are
 numbered and standalone like pipeline stages (no CLI args); they need stages
-00–02 to have run (`50`/`70` also read stage 04's labels).
+00–02 to have run (`50`/`70` also read stage 04's labels; `45` needs only
+stage 00). Blog-facing numbers live in `data/claim_inventory.md` (gitignored,
+with `data/prior_art_research.md`) — update it when a headline stat changes.
 
 ```bash
 uv run python analysis/common.py             # (re)build the cached exact kNN graph (~3 min)
@@ -161,9 +163,19 @@ uv run python analysis/20_metadata_sweep.py  # then any numbered script, in any 
 - **Scripts:** `10` EVoC ambient clustering + Toponymy/Haiku region naming (the
   only paid step, ~$8.40, cost-guarded; the clustering itself is free and takes
   ~20s) · `20` metadata × geometry kNN sweep vs permutation nulls · `30` linear
-  probes (episode-grouped CV) · `40` season drift · `50` region composition +
-  AMI crosswalk vs the 2D map's regions · `60` batch-level robustness nulls ·
-  `70` → `report.html` (the working report) · `80` → `treemap.html` (standalone
+  probes (episode-grouped CV; incl. the 5-class board_row probe that mirrors
+  Boettcher 2016) · `35` round-gradient decomposition within recurring category
+  titles (scheduling vs writing; result: ~all scheduling, writing ≈3%, p=.11 —
+  never quote its per-title/fraction columns without the axis-refit null) ·
+  `40` season drift · `45` full-archive recycling cadence + WGA-strike months
+  (reads only stage 00's raw parquet, no embeddings; lexical near-dupes are the
+  PRIMARY method — the dataset's own repeat links under-detect pre-2016; pairs
+  from the same episode or <90 days are duplicate records, not recycling) ·
+  `50` region composition + AMI crosswalk vs the 2D map's regions · `60`
+  batch-level robustness nulls · `70` → `report.html` (the working report;
+  its F8 recycling figure still tells the retired windowed "7–8 season clock"
+  story — the archive truth is a 1–2 season dead zone plus WGA-strike spikes,
+  see `data/claim_inventory.md` §3) · `80` → `treemap.html` (standalone
   full-page treemap with a DJ-share / FJ-lift / DD-lift color dropdown).
 - **toponymy 0.5.0's `EVoCClusterer` wrapper is incompatible with evoc 0.3.1**
   (it passes since-dropped kwargs), so `10` drives `evoc.EVoC` directly and hands
