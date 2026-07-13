@@ -173,10 +173,12 @@ uv run python analysis/20_metadata_sweep.py  # then any numbered script, in any 
   from the same episode or <90 days are duplicate records, not recycling) ·
   `50` region composition + AMI crosswalk vs the 2D map's regions · `60`
   batch-level robustness nulls · `70` → `report.html` (the working report;
-  its F8 recycling figure still tells the retired windowed "7–8 season clock"
-  story — the archive truth is a 1–2 season dead zone plus WGA-strike spikes,
-  see `data/claim_inventory.md` §3) · `80` → `treemap.html` (standalone
-  full-page treemap with a DJ-share / FJ-lift / DD-lift color dropdown).
+  its time section keeps the old windowed cadence figure as a deliberate
+  censoring exhibit next to the archive truth from `45`) · `75` →
+  `data/analysis/blog/fig*.html` (standalone blog figures, CDN plotly,
+  numbers pinned to `data/claim_inventory.md`; regen ~0.3s) · `80` →
+  `treemap.html` (standalone full-page treemap with a DJ-share / FJ-lift /
+  DD-lift color dropdown).
 - **toponymy 0.5.0's `EVoCClusterer` wrapper is incompatible with evoc 0.3.1**
   (it passes since-dropped kwargs), so `10` drives `evoc.EVoC` directly and hands
   `Toponymy` a duck-typed pre-fitted clusterer via its documented reuse branch.

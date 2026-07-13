@@ -574,30 +574,103 @@ f8.add_trace(
 )
 f8.update_xaxes(title=dict(text="seasons between a clue and its near-duplicate", font=dict(size=12)), dtick=1)
 f8.update_yaxes(title=dict(text="% of pairs", font=dict(size=12)))
-layout(f8, height=380, title="Recycling runs on a 7–8 season clock, with a 1–2 season dead zone", barcornerradius=4)
+layout(f8, height=380, title="What the 2016+ window shows — right-censored at gap ~9", barcornerradius=4)
+
+# F8b/F8c: the archive truth (45_recycling_archive.py artifacts; lexical = primary).
+# The windowed figure above is kept deliberately: its "7–8 season clock" was the
+# censored projection of the S40 strike event, and the contrast is the lesson.
+recyc = pd.read_parquet(ANALYSIS_DIR / "recycling_archive.parquet")
+strike_m = pd.read_parquet(ANALYSIS_DIR / "recycling_strike_months.parquet")
+f8b = go.Figure()
+f8b.add_vrect(x0=9.5, x1=24.5, fillcolor=GRID, opacity=0.4, line_width=0)
+f8b.add_annotation(
+    x=17,
+    y=1.0,
+    yref="y domain",
+    text="invisible to the 2016+ window",
+    showarrow=False,
+    font=dict(size=11, color=MUTED),
+    yanchor="top",
+)
+f8b.add_hline(y=1.0, line_color=BASE, line_width=1)
+for scope, lab, color in [
+    ("s<32", "S1–31 (1984–2015)", BLUE),
+    ("s32-39", "S32–39 (2015–2023)", AQUA),
+    ("s40-41", "S40–41 (2023–2025, strike era)", "#eda100"),
+]:
+    t = recyc.query("method == 'lexical_nearest' and scope == @scope and gap <= 24")
+    f8b.add_trace(
+        go.Scatter(
+            x=t["gap"],
+            y=t["ratio"],
+            mode="lines+markers",
+            name=lab,
+            line=dict(color=color, width=2),
+            marker=dict(size=6),
+            hovertemplate=lab + " — gap %{x}: %{y:.2f}× (n=%{customdata})<extra></extra>",
+            customdata=t["n_pairs"],
+        )
+    )
+f8b.update_xaxes(
+    title=dict(
+        text="seasons back to the most recent earlier source (full archive, lexical near-dupes)", font=dict(size=12)
+    ),
+    dtick=2,
+)
+f8b.update_yaxes(title=dict(text="observed ÷ expected", font=dict(size=12)), rangemode="tozero")
+layout(f8b, height=400, title="Archive truth: a 1–2 season dead zone, a long tail, and a strike-era reach")
+
+rate_s = recyc.query("method == 'lexical_rate' and scope == 'per_season' and gap >= 1")
+f8c = go.Figure(
+    go.Bar(
+        x=1983 + rate_s["gap"],
+        y=rate_s["observed_share"] * 100,
+        marker=dict(color=[BLUE if s in (24, 40) else BASE for s in rate_s["gap"]], line=dict(color=SURFACE, width=2)),
+        hovertemplate="season starting %{x}: %{y:.1f}% recycled<extra></extra>",
+    )
+)
+f8c.add_annotation(
+    x=2007, y=6.4, text="2007–08 WGA strike", showarrow=False, font=dict(size=11, color=INK2), yanchor="bottom"
+)
+f8c.add_annotation(
+    x=2023, y=13.5, text="2023 WGA strike", showarrow=False, font=dict(size=11, color=INK2), yanchor="bottom"
+)
+f8c.update_yaxes(title=dict(text="% of aired clues", font=dict(size=12)))
+layout(f8c, height=340, title="Recycled share by season: both writers' strikes are visible", barcornerradius=4)
 
 air_r2 = probes.query("field == 'air_year'")["value"].iloc[0]
 add_section(
     "time",
     "time",
-    "A stationary show that avoids its own recent past",
-    f"""<p>Three views. (1) Every consecutive season pair's centroid moves more than a label-shuffle
+    "A show that avoids its own recent past — until a strike",
+    f"""<p>Four views. (1) Every consecutive season pair's centroid moves more than a label-shuffle
     null (z +9 to +26) — but the movement is ~4×10⁻⁴ cosine per season, ~2×10⁻³ over the whole decade:
     real, and tiny. The Regular-only panel shows the S39→S40 bump survives removing tournaments (season 40
     = the strike season). (2) The naive same-season lift (1.2–2.0×) inverts under the episode-swap null:
     net of episode structure, a season's clues are slightly <i>less</i> similar to each other than to the
-    rest of the decade — S41 at 0.87× (z=−8.5). (3) The mechanism: near-duplicate pairs avoid the 1–2
-    season range (writers don't repeat fresh material) and pile up at a 7–8 season gap. Consistently, a
-    linear probe reads air date at only R²={air_r2:.3f} under episode-grouped CV. S32's excess at gap 0
-    partly reflects its truncated in-window season.</p>""",
+    rest of the decade — S41 at 0.87× (z=−8.5). (3) The windowed near-dupe cadence (kept below as a
+    methods exhibit) once read as a "7–8 season clock" — that claim is <b>retired</b>: gaps are
+    right-censored at ~9 in a 10-season window, and the full-archive analysis
+    (<code>45_recycling_archive.py</code>, text-only) shows the stationary policy is a 1–2 season dead
+    zone (o/e 0.08–0.63) with a broad 3–15 season reach and a long tail — median nearest-source gap 9,
+    49% of recycling ≥10 seasons back. (4) The apparent "clock" was mostly the <b>2023 WGA strike</b>:
+    S40 recycled 13.3% of aired clues (Nov 2023 peaks at 47%) from two deep back-catalog bands, and the
+    <b>2007–08 strike</b> shows the same signature (S24 at 6.3%; Jun 2008 at 20%), each lagging its
+    strike by the taping lead. Consistently, a linear probe reads air date at only R²={air_r2:.3f}
+    under episode-grouped CV.</p>""",
     [
         render(f6),
         render(f7),
+        render(f8c),
+        render(f8b),
         render(f8),
         details_table(
-            pd.DataFrame({"season gap": range(10), "observed %": obs_gap * 100, "expected %": exp_gap * 100}),
-            "recycling cadence",
+            recyc.query(
+                "method == 'lexical_nearest' and scope in ('archive', 's<32', 's32-39', 's40-41') and gap <= 24"
+            )[["scope", "gap", "n_pairs", "observed_share", "expected_share", "ratio"]],
+            "archive recycling cadence by era",
         ),
+        details_table(strike_m, "strike-window monthly recycling"),
     ],
 )
 
@@ -803,9 +876,12 @@ tldr = """
 ~2× hot; TV/sports/rock/food 0.16–0.36×. Linear probe AUC 0.69 (control 0.504).</li>
 <li><b>Rounds form a curriculum.</b> Food/sports/games → Jeopardy; composers/art/mythology → Double
 Jeopardy; Final Jeopardy triples down on prestige and has never (in-window) touched culinary.</li>
-<li><b>The show is topically stationary but anti-recent.</b> Decade centroid drift ≈ 0.002 cosine;
-net of episodes, seasons <i>anti</i>-cluster; near-duplicates recycle on a 7–8 season clock with a
-1–2 season dead zone; air date is nearly unreadable (probe R²=0.03).</li>
+<li><b>The show is topically stationary but anti-recent — and both WGA strikes show up in the
+recycling record.</b> Decade centroid drift ≈ 0.002 cosine; net of episodes, seasons
+<i>anti</i>-cluster; air date is nearly unreadable (probe R²=0.03). Full-archive recycling: a 1–2
+season dead zone, a long tail (median source gap 9 seasons), and strike-era spikes — Nov 2023 = 47%
+of aired clues recycled, Jun 2008 = 20% (the old windowed "7–8 season clock" is retired as a
+censoring artifact).</li>
 <li><b>Tournament "topical identities" are mostly episode batching.</b> Only College Championship (1.14×)
 and Champions Wildcard (1.09×) survive an episode-swap null.</li>
 <li><b>The strongest continuous signals:</b> stock-answer frequency (assortativity 0.62, probe R²=0.40)
