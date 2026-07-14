@@ -161,12 +161,28 @@ uv run python analysis/20_metadata_sweep.py  # then any numbered script, in any 
   exact cosine k=25 kNN graph, the permutation-test machinery, and
   `dmp_region_tree()`, the region hierarchy shared by `70` and `80`.
 - **Scripts:** `10` EVoC ambient clustering + Toponymy/Haiku region naming (the
-  only paid step, ~$8.40, cost-guarded; the clustering itself is free and takes
+  main paid step, ~$8.40, cost-guarded; the clustering itself is free and takes
   ~20s) · `20` metadata × geometry kNN sweep vs permutation nulls · `30` linear
   probes (episode-grouped CV; incl. the 5-class board_row probe that mirrors
   Boettcher 2016) · `35` round-gradient decomposition within recurring category
   titles (scheduling vs writing; result: ~all scheduling, writing ≈3%, p=.11 —
   never quote its per-title/fraction columns without the axis-refit null) ·
+  `36` DD information-set ladder — what a PLAYER sees before picking: title-only
+  Cohere embeddings (~$0.01, cached/resumable `data/analysis/title_embeddings.npz`;
+  ClientV2 gets an explicit `timeout=` — a hung socket raises nothing and stalls
+  retry loops forever) vs round×row position vs full content, plus a
+  within-category which-clue-is-the-DD leg, and a board backtest on complete
+  fully-revealed boards (first-pick P(DD): J 3.3% random → 12.0% title+position,
+  DJ 6.7% → 15.8%; position strategy = always row 4; the two heuristics stack
+  ~multiplicatively); headline inversion: position alone (AUC 0.715) beats full
+  clue text (0.690) ·
+  `37` LLM heuristic backtest — is the title signal HUMAN-usable? Haiku 4.5
+  (temp 0) picks the DD category from the six titles on 36's exact boards under
+  5 prompt arms; ONE SENTENCE of best practices ≈ the full LR title model
+  (J 5.9% vs 6.0% category-only), while the no-heuristic control lands BELOW
+  random (z≈−5, picks skew wordplay) — the pattern isn't in the prior; needs
+  only stages 00–01; picks cached `data/analysis/llm_picks.parquet` (~$4 paid
+  artifact, resumable) ·
   `40` season drift · `45` full-archive recycling cadence + WGA-strike months
   (reads only stage 00's raw parquet, no embeddings; lexical near-dupes are the
   PRIMARY method — the dataset's own repeat links under-detect pre-2016; pairs

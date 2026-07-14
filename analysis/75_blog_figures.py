@@ -15,6 +15,9 @@ fact-check sheet):
                          regions, diverging around 1x)
   fig4_round_gradient    region DJ-share and FJ-rate extremes (the curriculum)
   fig5_tournament_debunk naive clue-null lift vs episode-swap lift dumbbells
+  fig6_dd_first_pick     P(first pick hits a DD) per strategy on complete
+                         boards, J vs DJ (36's backtest + 37's one-sentence
+                         LLM arm; the post's DD-led centerpiece)
 
 Style: the dataviz reference palette, light mode, same constants as
 70_report.py (BLUE = honest signal, GRAY = flattered/mechanical; diverging
@@ -389,6 +392,93 @@ f5.update_xaxes(
 )
 layout(f5, 480, "Tournament “topical footprints” are episode structure, not content")
 write(f5, "fig5_tournament_debunk", written)
+
+# ------------------------------------------------- F6: DD first-pick backtest
+print("fig6: DD first-pick strategies ...", flush=True)
+info = pd.read_parquet(ANALYSIS_DIR / "dd_information_set.parquet")
+llm = pd.read_parquet(ANALYSIS_DIR / "dd_llm_heuristic.parquet")
+bt = info[info["leg"] == "board_backtest"].set_index("features")[["value", "sd", "n"]]
+one = llm[(llm["arm"] == "one_liner") & (llm["strategy"] == "category + row 4")].set_index("round")
+
+STRATS = [  # (label, key in bt or None -> LLM arm, color, pattern)
+    ("pick at random", "random", BASE, ""),
+    ("row 4, random category", "position (best row, random column)", GRAY, ""),
+    ("best-title category, random row", "title (best category, random row)", GRAY, ""),
+    ("row 4 + best-title category (model)", "title + position", BLUE, ""),
+    ("row 4 + the one-sentence heuristic (Claude)", None, AQUA, ""),
+    ("read all 30 clues first (impossible)", "content + position (impossible)", BASE, "/"),
+]
+f6 = make_subplots(
+    rows=1,
+    cols=2,
+    shared_yaxes=True,
+    horizontal_spacing=0.04,
+    subplot_titles=("Jeopardy round (1 Daily Double)", "Double Jeopardy (2 Daily Doubles)"),
+)
+labels = [s[0] for s in STRATS]
+for col, r_lab in [(1, "J"), (2, "DJ")]:
+    vals: list[float] = []
+    cis: list[float | None] = []  # None = analytic value, no whisker (the random baseline is exact)
+    for _, key, _, _ in STRATS:
+        if key is None:
+            r = one.loc[r_lab]
+            vals.append(float(r["p_first_pick"]))
+            cis.append(1.96 * float(r["sd"]) / float(r["n_boards"]) ** 0.5)
+        elif key == "random":
+            vals.append(float(bt.loc[f"random ({r_lab})", "value"]))
+            cis.append(None)
+        else:
+            r = bt.loc[f"{key} ({r_lab})"]
+            vals.append(float(r["value"]))
+            cis.append(1.96 * float(r["sd"]) / float(r["n"]) ** 0.5)
+    base_p = float(bt.loc[f"random ({r_lab})", "value"])
+    f6.add_trace(
+        go.Bar(
+            x=vals,
+            y=labels,
+            orientation="h",
+            marker=dict(
+                color=[c for _, _, c, _ in STRATS],
+                line=dict(color=SURFACE, width=1),
+                pattern=dict(shape=[p for _, _, _, p in STRATS], fgcolor=GRAY, size=5),
+            ),
+            error_x=dict(type="data", array=cis, color=INK2, thickness=1.4, width=4),
+            customdata=[(v / base_p, "exact" if c is None else f"±{c * 100:.1f}pp") for v, c in zip(vals, cis)],
+            hovertemplate="%{y}: %{x:.1%} (%{customdata[0]:.1f}× random, %{customdata[1]})<extra></extra>",
+            showlegend=False,
+        ),
+        row=1,
+        col=col,
+    )
+    # value labels beyond the whisker tips, with a breathing-room pad so the
+    # whisker cap doesn't run into the number
+    upper = max(v + (c or 0) for v, c in zip(vals, cis))
+    pad = 0.02 * upper
+    f6.add_trace(
+        go.Scatter(
+            x=[v + (c or 0) + pad for v, c in zip(vals, cis)],
+            y=labels,
+            mode="text",
+            text=[f"{v * 100:.1f}%" for v in vals],
+            textposition="middle right",
+            textfont=dict(size=12, color=INK),
+            hoverinfo="skip",
+            showlegend=False,
+        ),
+        row=1,
+        col=col,
+    )
+    f6.update_xaxes(range=[0, upper * 1.24], tickformat=".0%", row=1, col=col)
+f6.update_yaxes(categoryorder="array", categoryarray=labels[::-1], row=1, col=1)
+f6.update_annotations(font=dict(size=12, color=INK2))
+layout(
+    f6,
+    440,
+    "Your first pick's chance of hitting a Daily Double, by strategy (full boards, 2016–2025)"
+    "<br><sup>whiskers are 95% confidence intervals across boards (991 J / 874 DJ); the random baseline is exact</sup>",
+)
+f6.update_layout(margin=dict(t=74))
+write(f6, "fig6_dd_first_pick", written)
 
 # ------------------------------------------------- preview index
 frames = "\n".join(
