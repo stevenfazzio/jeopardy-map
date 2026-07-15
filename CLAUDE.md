@@ -183,6 +183,15 @@ uv run python analysis/20_metadata_sweep.py  # then any numbered script, in any 
   random (z≈−5, picks skew wordplay) — the pattern isn't in the prior; needs
   only stages 00–01; picks cached `data/analysis/llm_picks.parquet` (~$4 paid
   artifact, resumable) ·
+  `38` static title datamap → `data/analysis/blog/fig7_title_map.png` — one dot
+  per unique main-round title (36's cache, run 36 first), color = kNN-smoothed
+  pooled DD rate (diverging around the 24.7% base; raw per-title fractions are
+  0/1 speckle — 88.9% of titles air once — and were rejected on sight), size =
+  airings; caches `title_umap.npz` + `title_region_labels.parquet` (733 regions,
+  ~$1.60 Haiku, reusable for an interactive title map); pre-fits
+  ToponymyClusterer so the cost guard sees region count before paying; static
+  points colored by non-cluster data need `color_label_text=False, add_glow=False`
+  (the glow is cluster-palette colored and fakes regional signal) ·
   `40` season drift · `45` full-archive recycling cadence + WGA-strike months
   (reads only stage 00's raw parquet, no embeddings; lexical near-dupes are the
   PRIMARY method — the dataset's own repeat links under-detect pre-2016; pairs
