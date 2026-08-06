@@ -170,7 +170,10 @@ def main():
 
     coords_xy = df[["x", "y"]].to_numpy()
 
-    # Optional region labels (finest first, as Toponymy stores them), aligned by clue_id.
+    # Optional region labels, aligned by clue_id. This project's parquet stores
+    # label_layer_0 = FINEST, matching Toponymy's cluster_layers_ and the order
+    # DataMapPlot wants, so no reversal here. (jeopardy-wikipedia-map uses the
+    # same column names for the OPPOSITE order -- don't copy code between them.)
     label_layers = []
     if TOPONYMY_LABELS_PARQUET.exists():
         topo = pd.read_parquet(TOPONYMY_LABELS_PARQUET)
@@ -180,6 +183,10 @@ def main():
             key=lambda s: int(s.rsplit("_", 1)[1]),
         )
         label_layers = [merged[c].fillna("Unlabelled").to_numpy() for c in layer_cols]
+        # Convention-agnostic guard: the finest layer always has more unique names.
+        n_finest = pd.Series(label_layers[0]).nunique()
+        n_coarsest = pd.Series(label_layers[-1]).nunique()
+        assert n_finest >= n_coarsest, "label layers must be finest-first for DataMapPlot"
         print(f"  using {len(label_layers)} Toponymy label layer(s)")
     else:
         print("  no Toponymy labels; rendering without region names")
