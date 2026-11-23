@@ -158,6 +158,16 @@ def _aside_html(aside):
     return f'<div style="margin-top:5px;font-size:11px;font-style:italic;opacity:.6">“{a}”</div>'
 
 
+# Plausible analytics: the one site that covers all of stevenfazzio.com. The script
+# ignores localhost and file:// pages, so local previews stay out of the stats.
+PLAUSIBLE_SNIPPET = """<!-- Privacy-friendly analytics by Plausible -->
+<script async src="https://plausible.io/js/pa-dvmKWiL1gpqH63wOvMp-g.js"></script>
+<script>
+  window.plausible=window.plausible||function(){(plausible.q=plausible.q||[]).push(arguments)},plausible.init=plausible.init||function(i){plausible.o=i||{}};
+  plausible.init()
+</script>"""
+
+
 def main():
     crd = np.load(UMAP_COORDS_NPZ, allow_pickle=True)
     coords = crd["coords"].astype(np.float32)
@@ -392,6 +402,9 @@ def main():
         darkmode=True,
     )
     fig.save(str(MAP_HTML))
+    text = MAP_HTML.read_text(encoding="utf-8")
+    assert "</head>" in text, "no </head> in the rendered page"
+    MAP_HTML.write_text(text.replace("</head>", PLAUSIBLE_SNIPPET + "\n</head>", 1), encoding="utf-8")
 
     print(f"Saved {MAP_HTML} ({MAP_HTML.stat().st_size / 1e6:.1f} MB)")
 
